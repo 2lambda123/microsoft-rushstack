@@ -18,7 +18,8 @@ const mockHashes: Map<string, string> = new Map([
   ['g/package.json', 'hash14'],
   ['h/package.json', 'hash15'],
   ['i/package.json', 'hash16'],
-  ['j/package.json', 'hash17']
+  ['j/package.json', 'hash17'],
+  ['rush.json', 'hash18']
 ]);
 jest.mock(`@rushstack/package-deps-hash`, () => {
   return {

@@ -5,7 +5,7 @@ import * as path from 'path';
 import { createHash, type Hash } from 'crypto';
 import ignore, { type Ignore } from 'ignore';
 
-import { Path, Sort } from '@rushstack/node-core-library';
+import { InternalError, Path, Sort } from '@rushstack/node-core-library';
 
 import type { RushConfigurationProject } from '../../api/RushConfigurationProject';
 import type { IOperationSettings, RushProjectConfiguration } from '../../api/RushProjectConfiguration';
@@ -34,11 +34,7 @@ export interface IRushSnapshotProjectMetadata {
   additionalFilesByOperationName?: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
-interface IInternalRushSnapshotProjectMetadata {
-  /**
-   * The contents of rush-project.json for the project, if available
-   */
-  projectConfig?: RushProjectConfiguration;
+interface IInternalRushSnapshotProjectMetadata extends IRushSnapshotProjectMetadata {
   /**
    * Cached filter of files that are not ignored by the project's `incrementalBuildIgnoredGlobs`.
    * @param filePath - The path to the file to check
@@ -49,10 +45,6 @@ interface IInternalRushSnapshotProjectMetadata {
    * The cached Git hashes for all files in the project folder.
    */
   hashes: Map<string, string>;
-  /**
-   * The list of additional file paths that are applicable to each operation name, if any.
-   */
-  additionalFilesByOperationName?: ReadonlyMap<string, ReadonlySet<string>>;
   /**
    * Cached hashes for all files in the project folder, including additional files.
    * Upon calculating this map, input-output file collisions are detected.
@@ -133,16 +125,13 @@ export interface IInputSnapshot {
   ): ReadonlyMap<string, string>;
 
   /**
-   * Gets the local state hash for the operation. This will later be combined with the hash of the command being executed and the final hashes of the operation's dependencies to compute
-   * the final hash for the operation.
+   * Gets the state hash for the files owned by this operation, including the resolutions of package.json dependencies. This will later be combined with the hash of
+   * the command being executed and the final hashes of the operation's dependencies to compute the final hash for the operation.
    * @param project - The Rush project to compute the state hash for
    * @param operationName - The name of the operation (phase) to get hashes for. If omitted, returns a generic hash for the whole project, as used for bulk commands.
    * @returns The local state hash for the project. This is a hash of the environment, the project's tracked files, and any additional files.
    */
-  getLocalStateHashForOperation(
-    project: IRushConfigurationProjectForSnapshot,
-    operationName?: string
-  ): string;
+  getOperationOwnStateHash(project: IRushConfigurationProjectForSnapshot, operationName?: string): string;
 }
 
 /**
@@ -197,18 +186,24 @@ export class InputSnapshot implements IInputSnapshot {
       IRushConfigurationProjectForSnapshot,
       IInternalRushSnapshotProjectMetadata
     > = new Map();
-    for (const [project, record] of params.projectMap) {
-      projectMetadataMap.set(project, {
+    const createInternalRecord = (
+      project: IRushConfigurationProjectForSnapshot,
+      baseRecord: IRushSnapshotProjectMetadata | undefined
+    ): IInternalRushSnapshotProjectMetadata => {
+      return {
         // Data from the caller
-        projectConfig: record.projectConfig,
-        additionalFilesByOperationName: record.additionalFilesByOperationName,
+        projectConfig: baseRecord?.projectConfig,
+        additionalFilesByOperationName: baseRecord?.additionalFilesByOperationName,
 
         // Caches
         hashes: new Map(),
-        fileHashesByOperationName: new Map(),
         hashByOperationName: new Map(),
+        fileHashesByOperationName: new Map(),
         relativePrefix: getRelativePrefix(project, rootDir)
-      });
+      };
+    };
+    for (const [project, record] of params.projectMap) {
+      projectMetadataMap.set(project, createInternalRecord(project, record));
     }
 
     // Route hashes to individual projects
@@ -220,17 +215,7 @@ export class InputSnapshot implements IInputSnapshot {
 
       let record: IInternalRushSnapshotProjectMetadata | undefined = projectMetadataMap.get(project);
       if (!record) {
-        projectMetadataMap.set(
-          project,
-          (record = {
-            projectConfig: undefined,
-            additionalFilesByOperationName: undefined,
-            hashes: new Map(),
-            hashByOperationName: new Map(),
-            fileHashesByOperationName: new Map(),
-            relativePrefix: getRelativePrefix(project, rootDir)
-          })
-        );
+        projectMetadataMap.set(project, (record = createInternalRecord(project, undefined)));
       }
 
       record.hashes.set(file, hash);
@@ -248,7 +233,7 @@ export class InputSnapshot implements IInputSnapshot {
         const owningProject: IRushConfigurationProjectForSnapshot | undefined =
           lookupByPath.findChildPath(file);
         if (owningProject) {
-          throw new Error(
+          throw new InternalError(
             `Requested global additional file "${file}" is owned by project in "${owningProject.projectRelativeFolder}". Declare a project dependency instead.`
           );
         }
@@ -278,7 +263,7 @@ export class InputSnapshot implements IInputSnapshot {
   ): ReadonlyMap<string, string> {
     const record: IInternalRushSnapshotProjectMetadata | undefined = this._projectMetadataMap.get(project);
     if (!record) {
-      throw new Error(`No information available for project at ${project.projectFolder}`);
+      throw new InternalError(`No information available for project at ${project.projectFolder}`);
     }
 
     const { fileHashesByOperationName } = record;
@@ -328,7 +313,9 @@ export class InputSnapshot implements IInputSnapshot {
           const outputMatch: string | undefined = outputValidator?.findChildPath(filePath);
           if (outputMatch) {
             throw new Error(
-              `Configured output folder "${outputMatch}" for operation "${operationName}" in project "${project.projectRelativeFolder}" contains tracked input file "${filePath}".`
+              `Configured output folder "${outputMatch}" for operation "${operationName}" in project "${project.projectRelativeFolder}" contains tracked input file "${filePath}".` +
+                ` If it is intended that this operation modifies its own input files, modify the build process to emit a warning if the output version differs from the input, and remove the directory from "outputFolderNames".` +
+                ` This will ensure cache correctness. Otherwise, change the build process to output to a disjoint folder.`
             );
           }
         }
@@ -341,7 +328,7 @@ export class InputSnapshot implements IInputSnapshot {
   /**
    * {@inheritdoc}
    */
-  public getLocalStateHashForOperation(
+  public getOperationOwnStateHash(
     project: IRushConfigurationProjectForSnapshot,
     operationName?: string
   ): string {
@@ -392,14 +379,11 @@ export class InputSnapshot implements IInputSnapshot {
     return hash;
   }
 
-  private *_resolveHashes(filePaths: Iterable<string>): IterableIterator<[string, string]> {
+  private *_resolveHashes(filePaths: Iterable<string>): Generator<[string, string]> {
     const { _hashes, _additionalHashes } = this;
 
     for (const filePath of filePaths) {
-      let hash: string | undefined = _hashes.get(filePath);
-      if (!hash && _additionalHashes) {
-        hash = _additionalHashes.get(filePath);
-      }
+      const hash: string | undefined = _hashes.get(filePath) ?? _additionalHashes?.get(filePath);
       if (!hash) {
         throw new Error(`Could not find hash for file path "${filePath}"`);
       }

@@ -390,6 +390,11 @@ export class PhasedScriptAction extends BaseScriptAction<IPhasedCommandConfig> {
       const initialSnapshot: IInputSnapshot | undefined = await analyzer._tryGetSnapshotAsync(terminal);
       repoStateStopwatch.stop();
       terminal.writeLine(`DONE (${repoStateStopwatch.toString()})`);
+      if (!initialSnapshot) {
+        terminal.writeLine(
+          `The Rush monorepo is not in a Git repository. Rush will proceed without incremental build support.`
+        );
+      }
       terminal.writeLine();
 
       const initialCreateOperationsContext: ICreateOperationsContext = {
@@ -521,7 +526,9 @@ export class PhasedScriptAction extends BaseScriptAction<IPhasedCommandConfig> {
     const { inputSnapshot: initialState, projectSelection: projectsToWatch } = initialCreateOperationsContext;
 
     if (!initialState) {
-      terminal.writeErrorLine(`Cannot watch for changes if not in a Git repository, exiting.`);
+      terminal.writeErrorLine(
+        `Cannot watch for changes if the Rush repo is not in a Git repository, exiting.`
+      );
       throw new AlreadyReportedError();
     }
 

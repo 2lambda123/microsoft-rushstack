@@ -20,15 +20,33 @@ import { TarExecutable } from '../../utilities/TarExecutable';
 import { EnvironmentVariableNames } from '../../api/EnvironmentConfiguration';
 
 export interface IProjectBuildCacheOptions {
+  /**
+   * The Rush-wide configuration for the build cache.
+   */
   buildCacheConfiguration: BuildCacheConfiguration;
+  /**
+   * The project to be cached.
+   */
   project: RushConfigurationProject;
-
+  /**
+   * Value from rush-project.json
+   */
   projectOutputFolderNames: ReadonlyArray<string>;
+  /**
+   * Value from CacheableOperationPlugin
+   */
   additionalProjectOutputFilePaths?: ReadonlyArray<string>;
-
+  /**
+   * The hash of all relevant inputs and configuration that uniquely identifies this execution.
+   */
   operationStateHash: string;
-
+  /**
+   * The terminal to use for logging.
+   */
   terminal: ITerminal;
+  /**
+   * The name of the phase that is being cached.
+   */
   phaseName: string;
 }
 
@@ -38,11 +56,7 @@ interface IPathsToCache {
 }
 
 export class ProjectBuildCache {
-  /**
-   * null === we haven't tried to initialize yet
-   * undefined === unable to initialize
-   */
-  private static _tarUtilityPromise: Promise<TarExecutable | undefined> | null = null;
+  private static _tarUtilityPromise: Promise<TarExecutable | undefined> | undefined;
 
   private readonly _project: RushConfigurationProject;
   private readonly _localBuildCacheProvider: FileSystemBuildCacheProvider;
@@ -51,7 +65,7 @@ export class ProjectBuildCache {
   private readonly _cacheWriteEnabled: boolean;
   private readonly _projectOutputFolderNames: ReadonlyArray<string>;
   private readonly _additionalProjectOutputFilePaths: ReadonlyArray<string>;
-  private _cacheId: string | undefined;
+  private readonly _cacheId: string | undefined;
 
   private constructor(cacheId: string | undefined, options: IProjectBuildCacheOptions) {
     const { buildCacheConfiguration, project, projectOutputFolderNames, additionalProjectOutputFilePaths } =
@@ -67,7 +81,7 @@ export class ProjectBuildCache {
   }
 
   private static _tryGetTarUtility(terminal: ITerminal): Promise<TarExecutable | undefined> {
-    if (ProjectBuildCache._tarUtilityPromise === null) {
+    if (!ProjectBuildCache._tarUtilityPromise) {
       ProjectBuildCache._tarUtilityPromise = TarExecutable.tryInitializeAsync(terminal);
     }
 
@@ -78,9 +92,7 @@ export class ProjectBuildCache {
     return this._cacheId;
   }
 
-  public static async getProjectBuildCache(
-    options: IProjectBuildCacheOptions
-  ): Promise<ProjectBuildCache | undefined> {
+  public static getProjectBuildCache(options: IProjectBuildCacheOptions): ProjectBuildCache {
     const cacheId: string | undefined = ProjectBuildCache._getCacheId(options);
     return new ProjectBuildCache(cacheId, options);
   }
@@ -145,7 +157,7 @@ export class ProjectBuildCache {
     const tarUtility: TarExecutable | undefined = await ProjectBuildCache._tryGetTarUtility(terminal);
     let restoreSuccess: boolean = false;
     if (tarUtility && localCacheEntryPath) {
-      const logFilePath: string = this._getTarLogFilePath('untar');
+      const logFilePath: string = this._getTarLogFilePath(cacheId, 'untar');
       const tarExitCode: number = await tarUtility.tryUntarAsync({
         archivePath: localCacheEntryPath,
         outputFolderPath: projectFolderPath,
@@ -202,7 +214,7 @@ export class ProjectBuildCache {
       const randomSuffix: string = crypto.randomBytes(8).toString('hex');
       const tempLocalCacheEntryPath: string = `${finalLocalCacheEntryPath}-${randomSuffix}.temp`;
 
-      const logFilePath: string = this._getTarLogFilePath('tar');
+      const logFilePath: string = this._getTarLogFilePath(cacheId, 'tar');
       const tarExitCode: number = await tarUtility.tryCreateArchiveFromProjectPathsAsync({
         archivePath: tempLocalCacheEntryPath,
         paths: filesToCache.outputFilePaths,
@@ -366,8 +378,8 @@ export class ProjectBuildCache {
     };
   }
 
-  private _getTarLogFilePath(mode: 'tar' | 'untar'): string {
-    return path.join(this._project.projectRushTempFolder, `${this._cacheId}.${mode}.log`);
+  private _getTarLogFilePath(cacheId: string, mode: 'tar' | 'untar'): string {
+    return path.join(this._project.projectRushTempFolder, `${cacheId}.${mode}.log`);
   }
 
   private static _getCacheId(options: IProjectBuildCacheOptions): string | undefined {

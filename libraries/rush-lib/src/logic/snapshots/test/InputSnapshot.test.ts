@@ -199,11 +199,11 @@ describe(InputSnapshot.name, () => {
     });
   });
 
-  describe(InputSnapshot.prototype.getLocalStateHashForOperation.name, () => {
+  describe(InputSnapshot.prototype.getOperationOwnStateHash.name, () => {
     it('Handles trivial input', () => {
       const { project, input } = getTrivialSnapshot();
 
-      const result: string = input.getLocalStateHashForOperation(project);
+      const result: string = input.getOperationOwnStateHash(project);
 
       expect(result).toMatchSnapshot();
     });
@@ -211,14 +211,14 @@ describe(InputSnapshot.name, () => {
     it('Is invariant to input hash order', () => {
       const { project, options } = getTestConfig();
 
-      const baseline: string = new InputSnapshot(options).getLocalStateHashForOperation(project);
+      const baseline: string = new InputSnapshot(options).getOperationOwnStateHash(project);
 
       const input: InputSnapshot = new InputSnapshot({
         ...options,
         hashes: new Map(Array.from(options.hashes).reverse())
       });
 
-      const result: string = input.getLocalStateHashForOperation(project);
+      const result: string = input.getOperationOwnStateHash(project);
 
       expect(result).toEqual(baseline);
     });
@@ -249,17 +249,12 @@ describe(InputSnapshot.name, () => {
 
       const input: InputSnapshot = new InputSnapshot(options);
 
-      expect(() =>
-        input.getLocalStateHashForOperation(project, '_phase:build')
-      ).toThrowErrorMatchingSnapshot();
+      expect(() => input.getOperationOwnStateHash(project, '_phase:build')).toThrowErrorMatchingSnapshot();
     });
 
     it('Changes if outputFileNames changes', () => {
       const { project, options } = getTestConfig();
-      const baseline: string = new InputSnapshot(options).getLocalStateHashForOperation(
-        project,
-        '_phase:build'
-      );
+      const baseline: string = new InputSnapshot(options).getOperationOwnStateHash(project, '_phase:build');
 
       const projectConfig1: Pick<RushProjectConfiguration, 'operationSettingsByOperationName'> = {
         operationSettingsByOperationName: new Map([
@@ -309,9 +304,9 @@ describe(InputSnapshot.name, () => {
         ])
       });
 
-      const result1: string = input1.getLocalStateHashForOperation(project, '_phase:build');
+      const result1: string = input1.getOperationOwnStateHash(project, '_phase:build');
 
-      const result2: string = input2.getLocalStateHashForOperation(project, '_phase:build');
+      const result2: string = input2.getOperationOwnStateHash(project, '_phase:build');
 
       expect(result1).not.toEqual(baseline);
       expect(result2).not.toEqual(baseline);
@@ -320,10 +315,7 @@ describe(InputSnapshot.name, () => {
 
     it('Respects additionalOutputFilesByOperationName', () => {
       const { project, options } = getTestConfig();
-      const baseline: string = new InputSnapshot(options).getLocalStateHashForOperation(
-        project,
-        '_phase:build'
-      );
+      const baseline: string = new InputSnapshot(options).getOperationOwnStateHash(project, '_phase:build');
 
       const projectConfig: Pick<RushProjectConfiguration, 'operationSettingsByOperationName'> = {
         operationSettingsByOperationName: new Map([
@@ -349,7 +341,7 @@ describe(InputSnapshot.name, () => {
         ])
       });
 
-      const result: string = input.getLocalStateHashForOperation(project, '_phase:build');
+      const result: string = input.getOperationOwnStateHash(project, '_phase:build');
 
       expect(result).toMatchSnapshot();
       expect(result).not.toEqual(baseline);
@@ -357,17 +349,14 @@ describe(InputSnapshot.name, () => {
 
     it('Respects globalAdditionalFiles', () => {
       const { project, options } = getTestConfig();
-      const baseline: string = new InputSnapshot(options).getLocalStateHashForOperation(
-        project,
-        '_phase:build'
-      );
+      const baseline: string = new InputSnapshot(options).getOperationOwnStateHash(project, '_phase:build');
 
       const input: InputSnapshot = new InputSnapshot({
         ...options,
         globalAdditionalFiles: new Set(['common/config/some-config.json'])
       });
 
-      const result: string = input.getLocalStateHashForOperation(project);
+      const result: string = input.getOperationOwnStateHash(project);
 
       expect(result).toMatchSnapshot();
       expect(result).not.toEqual(baseline);
@@ -375,10 +364,7 @@ describe(InputSnapshot.name, () => {
 
     it('Respects incrementalBuildIgnoredGlobs', () => {
       const { project, options } = getTestConfig();
-      const baseline: string = new InputSnapshot(options).getLocalStateHashForOperation(
-        project,
-        '_phase:build'
-      );
+      const baseline: string = new InputSnapshot(options).getOperationOwnStateHash(project, '_phase:build');
 
       const projectConfig1: Pick<RushProjectConfiguration, 'incrementalBuildIgnoredGlobs'> = {
         incrementalBuildIgnoredGlobs: ['*2.js']
@@ -396,7 +382,7 @@ describe(InputSnapshot.name, () => {
         ])
       });
 
-      const result1: string = input1.getLocalStateHashForOperation(project);
+      const result1: string = input1.getOperationOwnStateHash(project);
 
       expect(result1).toMatchSnapshot();
       expect(result1).not.toEqual(baseline);
@@ -417,7 +403,7 @@ describe(InputSnapshot.name, () => {
         ])
       });
 
-      const result2: string = input2.getLocalStateHashForOperation(project);
+      const result2: string = input2.getOperationOwnStateHash(project);
 
       expect(result2).toMatchSnapshot();
       expect(result2).not.toEqual(baseline);
@@ -427,10 +413,7 @@ describe(InputSnapshot.name, () => {
 
     it('Respects dependsOnEnvVars', () => {
       const { project, options } = getTestConfig();
-      const baseline: string = new InputSnapshot(options).getLocalStateHashForOperation(
-        project,
-        '_phase:build'
-      );
+      const baseline: string = new InputSnapshot(options).getOperationOwnStateHash(project, '_phase:build');
 
       const projectConfig1: Pick<RushProjectConfiguration, 'operationSettingsByOperationName'> = {
         operationSettingsByOperationName: new Map([
@@ -457,7 +440,7 @@ describe(InputSnapshot.name, () => {
         environment: {}
       });
 
-      const result1: string = input1.getLocalStateHashForOperation(project, '_phase:build');
+      const result1: string = input1.getOperationOwnStateHash(project, '_phase:build');
 
       expect(result1).toMatchSnapshot();
       expect(result1).not.toEqual(baseline);
@@ -475,7 +458,7 @@ describe(InputSnapshot.name, () => {
         environment: { ENV_VAR: 'some_value' }
       });
 
-      const result2: string = input2.getLocalStateHashForOperation(project, '_phase:build');
+      const result2: string = input2.getOperationOwnStateHash(project, '_phase:build');
 
       expect(result2).toMatchSnapshot();
       expect(result2).not.toEqual(baseline);

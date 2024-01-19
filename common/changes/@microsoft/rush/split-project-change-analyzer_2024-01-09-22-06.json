@@ -2,7 +2,7 @@
   "changes": [
     {
       "packageName": "@microsoft/rush",
-      "comment": "[CACHE BREAK] Alters the computation of build cache ids to depend on the graph of operations in the build and therefore account for multiple phases, rather than only the declared npm dependencies. Ensures that \"dependsOnEnvVars\" and command line parameters that affect upstream phases impact the cache ids of downstream operations.",
+      "comment": "[CACHE BREAK] Alter the computation of build cache IDs to depend on the graph of operations in the build and therefore account for multiple phases, rather than only the declared dependencies. Ensure that `dependsOnEnvVars` and command line parameters that affect upstream phases impact the cache IDs of downstream operations.",
       "type": "none"
     }
   ],

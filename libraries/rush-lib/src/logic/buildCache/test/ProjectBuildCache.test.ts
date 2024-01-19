@@ -19,7 +19,7 @@ describe(ProjectBuildCache.name, () => {
   async function prepareSubject(options: Partial<ITestOptions>): Promise<ProjectBuildCache | undefined> {
     const terminal: Terminal = new Terminal(new StringBufferTerminalProvider());
 
-    const subject: ProjectBuildCache | undefined = await ProjectBuildCache.getProjectBuildCache({
+    const subject: ProjectBuildCache = ProjectBuildCache.getProjectBuildCache({
       buildCacheConfiguration: {
         buildCacheEnabled: options.hasOwnProperty('enabled') ? options.enabled : true,
         getCacheEntryId: (opts: IGenerateCacheEntryIdOptions) =>

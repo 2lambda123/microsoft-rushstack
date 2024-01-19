@@ -234,7 +234,12 @@ export class ProjectChangeAnalyzer {
 
       const [hashes, additionalFiles] = await Promise.all([
         getRepoStateAsync(rootDirectory, additionalRelativePathsToHash, gitPath),
-        getAdditionalFilesFromRushProjectConfigurationAsync(additionalGlobs, lookupByPath, terminal)
+        getAdditionalFilesFromRushProjectConfigurationAsync(
+          additionalGlobs,
+          lookupByPath,
+          rootDirectory,
+          terminal
+        )
       ]);
 
       for (const file of additionalFiles) {
@@ -254,7 +259,7 @@ export class ProjectChangeAnalyzer {
         globalAdditionalFiles,
         hashes,
         lookupByPath,
-        projectMap: projectMap,
+        projectMap,
         rootDir: rootDirectory
       });
     } catch (e) {
@@ -434,7 +439,8 @@ interface IAdditionalGlob {
 
 async function getAdditionalFilesFromRushProjectConfigurationAsync(
   additionalGlobs: IAdditionalGlob[],
-  lookupByPath: LookupByPath<RushConfigurationProject>,
+  rootRelativeLookupByPath: LookupByPath<RushConfigurationProject>,
+  rootDirectory: string,
   terminal: ITerminal
 ): Promise<Set<string>> {
   const additionalFilesFromRushProjectConfiguration: Set<string> = new Set();
@@ -465,25 +471,31 @@ async function getAdditionalFilesFromRushProjectConfigurationAsync(
     });
 
     for (const match of matches) {
-      if (path.isAbsolute(match)) {
+      // The glob result is relative to the project folder, but we want it to be relative to the repo root
+      const rootRelativeFilePath: string = Path.convertToSlashes(
+        path.relative(rootDirectory, path.resolve(project.projectFolder, match))
+      );
+
+      if (rootRelativeFilePath.startsWith('../')) {
+        // The target file is outside of the Git tree, use the original result of the match.
         additionalFilesFromRushProjectConfiguration.add(match);
         additionalFilesForOperation.add(match);
       } else {
-        const filePathForGit: string = path.posix.join(project.projectRelativeFolder, match);
-
-        const projectMatch: RushConfigurationProject | undefined = lookupByPath.findChildPath(filePathForGit);
+        // The target file is inside of the Git tree, find out if it is in a Rush project.
+        const projectMatch: RushConfigurationProject | undefined =
+          rootRelativeLookupByPath.findChildPath(rootRelativeFilePath);
         if (projectMatch && projectMatch !== project) {
           terminal.writeErrorLine(
             `In project "${project.packageName}" ("${project.projectRelativeFolder}"), ` +
-              `config for operation "${operationName}" specifies a glob "${pattern}" that selects a file in a different workspace project ` +
+              `config for operation "${operationName}" specifies a glob "${pattern}" that selects a file "${rootRelativeFilePath}" in a different workspace project ` +
               `"${projectMatch.packageName}" ("${projectMatch.projectRelativeFolder}"). ` +
-              `This is forbidden. The "dependsOnAdditionalFiles" property may only be used to refer non-workspace files, non-project files, or untracked files in the current project. ` +
+              `This is forbidden. The "dependsOnAdditionalFiles" property of "rush-project.json" may only be used to refer to non-workspace files, non-project files, or untracked files in the current project. ` +
               `To depend on files in another workspace project, use "devDependencies" in "package.json".`
           );
           throw new AlreadyReportedError();
         }
-        additionalFilesForOperation.add(filePathForGit);
-        additionalFilesFromRushProjectConfiguration.add(filePathForGit);
+        additionalFilesForOperation.add(rootRelativeFilePath);
+        additionalFilesFromRushProjectConfiguration.add(rootRelativeFilePath);
       }
     }
   });

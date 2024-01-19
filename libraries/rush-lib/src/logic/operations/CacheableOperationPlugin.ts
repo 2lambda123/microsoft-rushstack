@@ -100,6 +100,7 @@ export class CacheableOperationPlugin implements IPhasedCommandPlugin {
           );
         }
 
+        // This redefinition is necessary due to limitations in TypeScript's control flow analysis, due to the nested closure.
         const definitelyDefinedInputSnapshot: IInputSnapshot = inputSnapshot;
 
         const disjointSet: DisjointSet<Operation> | undefined = cobuildConfiguration?.cobuildFeatureEnabled
@@ -126,10 +127,7 @@ export class CacheableOperationPlugin implements IPhasedCommandPlugin {
           // - Git hashes of any files specified in `dependsOnAdditionalFiles` (must not be associated with a project)
           const localStateHash: string | undefined =
             associatedProject &&
-            definitelyDefinedInputSnapshot.getLocalStateHashForOperation(
-              associatedProject,
-              associatedPhase?.name
-            );
+            definitelyDefinedInputSnapshot.getOperationOwnStateHash(associatedProject, associatedPhase?.name);
 
           // The final state hashes of operation dependencies are factored into the hash to ensure that any
           // state changes in dependencies will invalidate the cache.
@@ -307,7 +305,7 @@ export class CacheableOperationPlugin implements IPhasedCommandPlugin {
           });
           buildCacheContext.buildCacheTerminal = buildCacheTerminal;
 
-          let projectBuildCache: ProjectBuildCache | undefined = await this._tryGetProjectBuildCacheAsync({
+          let projectBuildCache: ProjectBuildCache | undefined = this._tryGetProjectBuildCache({
             buildCacheContext,
             buildCacheConfiguration,
             rushProject: project,
@@ -489,13 +487,8 @@ export class CacheableOperationPlugin implements IPhasedCommandPlugin {
           }
         }
 
-        const {
-          cobuildLock,
-          operationBuildCache: projectBuildCache,
-          isCacheWriteAllowed,
-          buildCacheTerminal,
-          cacheRestored
-        } = buildCacheContext;
+        const { cobuildLock, operationBuildCache, isCacheWriteAllowed, buildCacheTerminal, cacheRestored } =
+          buildCacheContext;
 
         try {
           if (!cacheRestored) {
@@ -552,8 +545,8 @@ export class CacheableOperationPlugin implements IPhasedCommandPlugin {
 
           // If the command is successful, we can calculate project hash, and no dependencies were skipped,
           // write a new cache entry.
-          if (!setCacheEntryPromise && taskIsSuccessful && isCacheWriteAllowed && projectBuildCache) {
-            setCacheEntryPromise = () => projectBuildCache.trySetCacheEntryAsync(buildCacheTerminal);
+          if (!setCacheEntryPromise && taskIsSuccessful && isCacheWriteAllowed && operationBuildCache) {
+            setCacheEntryPromise = () => operationBuildCache.trySetCacheEntryAsync(buildCacheTerminal);
           }
           if (!cacheRestored) {
             const cacheWriteSuccess: boolean | undefined = await setCacheEntryPromise?.();
@@ -621,7 +614,7 @@ export class CacheableOperationPlugin implements IPhasedCommandPlugin {
     return buildCacheContext;
   }
 
-  private async _tryGetProjectBuildCacheAsync({
+  private _tryGetProjectBuildCache({
     buildCacheConfiguration,
     buildCacheContext,
     rushProject,
@@ -635,7 +628,7 @@ export class CacheableOperationPlugin implements IPhasedCommandPlugin {
     phase: IPhase;
     terminal: ITerminal;
     operationMetadataManager: OperationMetadataManager | undefined;
-  }): Promise<ProjectBuildCache | undefined> {
+  }): ProjectBuildCache | undefined {
     if (!buildCacheContext.operationBuildCache) {
       const { cacheDisabledReason } = buildCacheContext;
       if (cacheDisabledReason) {
@@ -653,7 +646,7 @@ export class CacheableOperationPlugin implements IPhasedCommandPlugin {
         operationMetadataManager?.relativeFilepaths || [];
 
       // eslint-disable-next-line require-atomic-updates -- This is guaranteed to not be concurrent
-      buildCacheContext.operationBuildCache = await ProjectBuildCache.getProjectBuildCache({
+      buildCacheContext.operationBuildCache = ProjectBuildCache.getProjectBuildCache({
         project: rushProject,
         projectOutputFolderNames: outputFolderNames,
         additionalProjectOutputFilePaths,

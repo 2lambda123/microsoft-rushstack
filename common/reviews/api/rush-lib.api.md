@@ -493,7 +493,7 @@ export interface IGlobalCommand extends IRushCommand {
 
 // @beta
 export interface IInputSnapshot {
-    getLocalStateHashForOperation(project: IRushConfigurationProjectForSnapshot, operationName?: string): string;
+    getOperationOwnStateHash(project: IRushConfigurationProjectForSnapshot, operationName?: string): string;
     getTrackedFileHashesForOperation(project: IRushConfigurationProjectForSnapshot, operationName?: string): ReadonlyMap<string, string>;
 }
 
