@@ -13,8 +13,6 @@ import {
 } from '@rushstack/node-core-library';
 
 import type { RushConfigurationProject } from '../../api/RushConfigurationProject';
-import type { ProjectChangeAnalyzer } from '../ProjectChangeAnalyzer';
-import { RushConstants } from '../RushConstants';
 import type { BuildCacheConfiguration } from '../../api/BuildCacheConfiguration';
 import type { ICloudBuildCacheProvider } from './ICloudBuildCacheProvider';
 import type { FileSystemBuildCacheProvider } from './FileSystemBuildCacheProvider';
@@ -22,14 +20,33 @@ import { TarExecutable } from '../../utilities/TarExecutable';
 import { EnvironmentVariableNames } from '../../api/EnvironmentConfiguration';
 
 export interface IProjectBuildCacheOptions {
+  /**
+   * The Rush-wide configuration for the build cache.
+   */
   buildCacheConfiguration: BuildCacheConfiguration;
+  /**
+   * The project to be cached.
+   */
   project: RushConfigurationProject;
+  /**
+   * Value from rush-project.json
+   */
   projectOutputFolderNames: ReadonlyArray<string>;
+  /**
+   * Value from CacheableOperationPlugin
+   */
   additionalProjectOutputFilePaths?: ReadonlyArray<string>;
-  additionalContext?: Record<string, string>;
-  configHash: string;
-  projectChangeAnalyzer: ProjectChangeAnalyzer;
+  /**
+   * The hash of all relevant inputs and configuration that uniquely identifies this execution.
+   */
+  operationStateHash: string;
+  /**
+   * The terminal to use for logging.
+   */
   terminal: ITerminal;
+  /**
+   * The name of the phase that is being cached.
+   */
   phaseName: string;
 }
 
@@ -39,11 +56,7 @@ interface IPathsToCache {
 }
 
 export class ProjectBuildCache {
-  /**
-   * null === we haven't tried to initialize yet
-   * undefined === unable to initialize
-   */
-  private static _tarUtilityPromise: Promise<TarExecutable | undefined> | null = null;
+  private static _tarUtilityPromise: Promise<TarExecutable | undefined> | undefined;
 
   private readonly _project: RushConfigurationProject;
   private readonly _localBuildCacheProvider: FileSystemBuildCacheProvider;
@@ -52,7 +65,7 @@ export class ProjectBuildCache {
   private readonly _cacheWriteEnabled: boolean;
   private readonly _projectOutputFolderNames: ReadonlyArray<string>;
   private readonly _additionalProjectOutputFilePaths: ReadonlyArray<string>;
-  private _cacheId: string | undefined;
+  private readonly _cacheId: string | undefined;
 
   private constructor(cacheId: string | undefined, options: IProjectBuildCacheOptions) {
     const { buildCacheConfiguration, project, projectOutputFolderNames, additionalProjectOutputFilePaths } =
@@ -68,7 +81,7 @@ export class ProjectBuildCache {
   }
 
   private static _tryGetTarUtility(terminal: ITerminal): Promise<TarExecutable | undefined> {
-    if (ProjectBuildCache._tarUtilityPromise === null) {
+    if (!ProjectBuildCache._tarUtilityPromise) {
       ProjectBuildCache._tarUtilityPromise = TarExecutable.tryInitializeAsync(terminal);
     }
 
@@ -79,10 +92,8 @@ export class ProjectBuildCache {
     return this._cacheId;
   }
 
-  public static async tryGetProjectBuildCache(
-    options: IProjectBuildCacheOptions
-  ): Promise<ProjectBuildCache | undefined> {
-    const cacheId: string | undefined = await ProjectBuildCache._getCacheId(options);
+  public static getProjectBuildCache(options: IProjectBuildCacheOptions): ProjectBuildCache {
+    const cacheId: string | undefined = ProjectBuildCache._getCacheId(options);
     return new ProjectBuildCache(cacheId, options);
   }
 
@@ -146,7 +157,7 @@ export class ProjectBuildCache {
     const tarUtility: TarExecutable | undefined = await ProjectBuildCache._tryGetTarUtility(terminal);
     let restoreSuccess: boolean = false;
     if (tarUtility && localCacheEntryPath) {
-      const logFilePath: string = this._getTarLogFilePath('untar');
+      const logFilePath: string = this._getTarLogFilePath(cacheId, 'untar');
       const tarExitCode: number = await tarUtility.tryUntarAsync({
         archivePath: localCacheEntryPath,
         outputFolderPath: projectFolderPath,
@@ -203,7 +214,7 @@ export class ProjectBuildCache {
       const randomSuffix: string = crypto.randomBytes(8).toString('hex');
       const tempLocalCacheEntryPath: string = `${finalLocalCacheEntryPath}-${randomSuffix}.temp`;
 
-      const logFilePath: string = this._getTarLogFilePath('tar');
+      const logFilePath: string = this._getTarLogFilePath(cacheId, 'tar');
       const tarExitCode: number = await tarUtility.tryCreateArchiveFromProjectPathsAsync({
         archivePath: tempLocalCacheEntryPath,
         paths: filesToCache.outputFilePaths,
@@ -367,76 +378,14 @@ export class ProjectBuildCache {
     };
   }
 
-  private _getTarLogFilePath(mode: 'tar' | 'untar'): string {
-    return path.join(this._project.projectRushTempFolder, `${this._cacheId}.${mode}.log`);
+  private _getTarLogFilePath(cacheId: string, mode: 'tar' | 'untar'): string {
+    return path.join(this._project.projectRushTempFolder, `${cacheId}.${mode}.log`);
   }
 
-  private static async _getCacheId(options: IProjectBuildCacheOptions): Promise<string | undefined> {
-    // The project state hash is calculated in the following method:
-    // - The current project's hash (see ProjectChangeAnalyzer.getProjectStateHash) is
-    //   calculated and appended to an array
-    // - The current project's recursive dependency projects' hashes are calculated
-    //   and appended to the array
-    // - A SHA1 hash is created and the following data is fed into it, in order:
-    //   1. The JSON-serialized list of output folder names for this
-    //      project (see ProjectBuildCache._projectOutputFolderNames)
-    //   2. The configHash from the operation's runner
-    //   3. Each dependency project hash (from the array constructed in previous steps),
-    //      in sorted alphanumerical-sorted order
-    // - A hex digest of the hash is returned
-    const projectChangeAnalyzer: ProjectChangeAnalyzer = options.projectChangeAnalyzer;
-    const projectStates: string[] = [];
-    const projectsToProcess: Set<RushConfigurationProject> = new Set();
-    projectsToProcess.add(options.project);
-
-    for (const projectToProcess of projectsToProcess) {
-      const projectState: string | undefined = await projectChangeAnalyzer._tryGetProjectStateHashAsync(
-        projectToProcess,
-        options.terminal
-      );
-      if (!projectState) {
-        // If we hit any projects with unknown state, return unknown cache ID
-        return undefined;
-      } else {
-        projectStates.push(projectState);
-        for (const dependency of projectToProcess.dependencyProjects) {
-          projectsToProcess.add(dependency);
-        }
-      }
-    }
-
-    const sortedProjectStates: string[] = projectStates.sort();
-    const hash: crypto.Hash = crypto.createHash('sha1');
-    // This value is used to force cache bust when the build cache algorithm changes
-    hash.update(`${RushConstants.buildCacheVersion}`);
-    hash.update(RushConstants.hashDelimiter);
-    const serializedOutputFolders: string = JSON.stringify(options.projectOutputFolderNames);
-    hash.update(serializedOutputFolders);
-    hash.update(RushConstants.hashDelimiter);
-    hash.update(options.configHash);
-    hash.update(RushConstants.hashDelimiter);
-    if (options.additionalContext) {
-      for (const key of Object.keys(options.additionalContext).sort()) {
-        // Add additional context keys and values.
-        //
-        // This choice (to modify the hash for every key regardless of whether a value is set) implies
-        // that just _adding_ an env var to the list of dependsOnEnvVars will modify its hash. This
-        // seems appropriate, because this behavior is consistent whether or not the env var happens
-        // to have a value.
-        hash.update(`${key}=${options.additionalContext[key]}`);
-        hash.update(RushConstants.hashDelimiter);
-      }
-    }
-    for (const projectHash of sortedProjectStates) {
-      hash.update(projectHash);
-      hash.update(RushConstants.hashDelimiter);
-    }
-
-    const projectStateHash: string = hash.digest('hex');
-
+  private static _getCacheId(options: IProjectBuildCacheOptions): string | undefined {
     return options.buildCacheConfiguration.getCacheEntryId({
       projectName: options.project.packageName,
-      projectStateHash,
+      projectStateHash: options.operationStateHash,
       phaseName: options.phaseName
     });
   }
