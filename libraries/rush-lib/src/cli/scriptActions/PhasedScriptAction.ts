@@ -455,6 +455,7 @@ export class PhasedScriptAction extends BaseScriptAction<IPhasedCommandConfig> {
         debugMode: this.parser.isDebug,
         parallelism,
         changedProjectsOnly,
+        cobuildConfiguration,
         beforeExecuteOperationAsync: async (record: OperationExecutionRecord) => {
           return await this.hooks.beforeExecuteOperation.promise(record);
         },

@@ -24,11 +24,13 @@ import type { IPhase } from '../../api/CommandLineConfiguration';
 import type { RushConfigurationProject } from '../../api/RushConfigurationProject';
 import { CollatedTerminalProvider } from '../../utilities/CollatedTerminalProvider';
 import { ProjectLogWritable } from './ProjectLogWritable';
+import type { CobuildConfiguration } from '../../api/CobuildConfiguration';
 
 export interface IOperationExecutionRecordContext {
   streamCollator: StreamCollator;
   onOperationStatusChanged?: (record: OperationExecutionRecord) => void;
 
+  cobuildConfiguration?: CobuildConfiguration;
   debugMode: boolean;
   quietMode: boolean;
 }
@@ -163,6 +165,13 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
   public get cobuildRunnerId(): string | undefined {
     // Lazy calculated because the state file is created/restored later on
     return this._operationMetadataManager?.stateFile.state?.cobuildRunnerId;
+  }
+
+  public get executedOnThisAgent(): boolean {
+    return (
+      !!this._context.cobuildConfiguration &&
+      this._context.cobuildConfiguration?.cobuildRunnerId !== this.cobuildRunnerId
+    );
   }
 
   /**
@@ -301,6 +310,15 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
         this._collatedWriter?.close();
         this.stdioSummarizer.close();
         this.stopwatch.stop();
+        if (!this.executedOnThisAgent && this.nonCachedDurationMs) {
+          const { startTime } = this.stopwatch;
+          if (startTime) {
+            this.stopwatch = Stopwatch.fromState({
+              startTime,
+              endTime: startTime + this.nonCachedDurationMs
+            });
+          }
+        }
       }
     }
   }
