@@ -168,11 +168,6 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
   }
 
   public get executedOnThisAgent(): boolean {
-    console.log(
-      'this._context.cobuildConfiguration',
-      this._context.cobuildConfiguration?.cobuildRunnerId,
-      this.cobuildRunnerId
-    );
     return (
       !!this._context.cobuildConfiguration &&
       // this can happen if this property is retrieved before `beforeResult` is called.
@@ -315,11 +310,6 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
       await beforeResult(this);
       if (this.status !== OperationStatus.RemoteExecuting) {
         this.stopwatch.stop();
-        console.log(
-          `Operation ${this.operation.name} took ${this.stopwatch.duration}ms`,
-          this.nonCachedDurationMs,
-          this.executedOnThisAgent
-        );
         if (!this.executedOnThisAgent && this.nonCachedDurationMs) {
           const { startTime } = this.stopwatch;
           if (startTime) {
