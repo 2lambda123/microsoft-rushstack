@@ -168,9 +168,16 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
   }
 
   public get executedOnThisAgent(): boolean {
+    console.log(
+      'this._context.cobuildConfiguration',
+      this._context.cobuildConfiguration?.cobuildRunnerId,
+      this.cobuildRunnerId
+    );
     return (
       !!this._context.cobuildConfiguration &&
-      this._context.cobuildConfiguration?.cobuildRunnerId !== this.cobuildRunnerId
+      // this can happen if this property is retrieved before `beforeResult` is called.
+      this.cobuildRunnerId !== undefined &&
+      this._context.cobuildConfiguration?.cobuildRunnerId === this.cobuildRunnerId
     );
   }
 
@@ -279,9 +286,11 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
 
   public async executeAsync({
     onStart,
-    onResult
+    onResult,
+    beforeResult
   }: {
     onStart: (record: OperationExecutionRecord) => Promise<OperationStatus | undefined>;
+    beforeResult: (record: OperationExecutionRecord) => Promise<void>;
     onResult: (record: OperationExecutionRecord) => Promise<void>;
   }): Promise<void> {
     if (this.status === OperationStatus.RemoteExecuting) {
@@ -302,8 +311,15 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
       this.status = OperationStatus.Failure;
       this.error = error;
     } finally {
+      // We may need to clean up and finalize resources (_operationMetadataManager for example needs to be saved by CacheableOperationPlugin)
+      await beforeResult(this);
       if (this.status !== OperationStatus.RemoteExecuting) {
         this.stopwatch.stop();
+        console.log(
+          `Operation ${this.operation.name} took ${this.stopwatch.duration}ms`,
+          this.nonCachedDurationMs,
+          this.executedOnThisAgent
+        );
         if (!this.executedOnThisAgent && this.nonCachedDurationMs) {
           const { startTime } = this.stopwatch;
           if (startTime) {
@@ -313,8 +329,10 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
             });
           }
         }
-        // Delegate global state reporting
-        await onResult(this);
+      }
+      // Delegate global state reporting
+      await onResult(this);
+      if (this.status !== OperationStatus.RemoteExecuting) {
         this._collatedWriter?.close();
         this.stdioSummarizer.close();
       }
