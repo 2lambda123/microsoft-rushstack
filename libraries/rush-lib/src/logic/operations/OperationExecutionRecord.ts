@@ -298,18 +298,13 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
       } else {
         this.status = await this.runner.executeAsync(this);
       }
-      // Delegate global state reporting
-      await onResult(this);
     } catch (error) {
       this.status = OperationStatus.Failure;
       this.error = error;
-      // Delegate global state reporting
-      await onResult(this);
     } finally {
       if (this.status !== OperationStatus.RemoteExecuting) {
-        this._collatedWriter?.close();
-        this.stdioSummarizer.close();
         this.stopwatch.stop();
+        console.warn('stopping', this.executedOnThisAgent, this.nonCachedDurationMs, this.stopwatch.duration);
         if (!this.executedOnThisAgent && this.nonCachedDurationMs) {
           const { startTime } = this.stopwatch;
           if (startTime) {
@@ -319,6 +314,10 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
             });
           }
         }
+        // Delegate global state reporting
+        await onResult(this);
+        this._collatedWriter?.close();
+        this.stdioSummarizer.close();
       }
     }
   }
