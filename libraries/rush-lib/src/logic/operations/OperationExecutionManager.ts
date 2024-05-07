@@ -327,7 +327,6 @@ export class OperationExecutionManager {
    */
   private _onOperationComplete(record: OperationExecutionRecord): void {
     const { runner, name, status } = record;
-    console.log(record.name, record.stopwatch.toString(), record.nonCachedDurationMs);
 
     const silent: boolean = runner.silent;
 

@@ -304,7 +304,6 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
     } finally {
       if (this.status !== OperationStatus.RemoteExecuting) {
         this.stopwatch.stop();
-        console.warn('stopping', this.executedOnThisAgent, this.nonCachedDurationMs, this.stopwatch.duration);
         if (!this.executedOnThisAgent && this.nonCachedDurationMs) {
           const { startTime } = this.stopwatch;
           if (startTime) {
