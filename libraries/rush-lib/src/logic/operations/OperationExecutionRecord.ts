@@ -290,10 +290,13 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
     beforeResult: (record: OperationExecutionRecord) => Promise<void>;
     onResult: (record: OperationExecutionRecord) => Promise<void>;
   }): Promise<void> {
-    if (this.status === OperationStatus.RemoteExecuting) {
-      this.stopwatch.reset();
+    if (
+      this.status !== OperationStatus.RemoteExecuting ||
+      // If the operation is remote executing, but we haven't seen it start yet, start the stopwatch.
+      (this.status === OperationStatus.RemoteExecuting && this.stopwatch.startTime === undefined)
+    ) {
+      this.stopwatch.start();
     }
-    this.stopwatch.start();
     this.status = OperationStatus.Executing;
 
     try {
@@ -312,10 +315,15 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
       await beforeResult(this);
       if (this.status !== OperationStatus.RemoteExecuting) {
         this.stopwatch.stop();
-        if (!this.executedOnThisAgent && this.nonCachedDurationMs) {
+        if (
+          !this.executedOnThisAgent &&
+          this.nonCachedDurationMs &&
+          this.status !== OperationStatus.FromCache
+        ) {
           const { startTime } = this.stopwatch;
           if (startTime) {
             this.stopwatch = Stopwatch.fromState({
+              // use endtime as it's the more accurate version of when this operation was marked as complete.
               startTime,
               endTime: startTime + this.nonCachedDurationMs
             });
