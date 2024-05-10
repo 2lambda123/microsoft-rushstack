@@ -246,7 +246,7 @@ describe(OperationExecutionManager.name, () => {
         );
 
         const result: IExecutionResult = await executionManager.executeAsync();
-        await _printTimeline({ terminal: mockTerminal, result });
+        _printTimeline({ terminal: mockTerminal, result });
         _printOperationStatus(mockTerminal, result);
         const allMessages: string = mockWritable.getAllOutput();
         expect(allMessages).toContain('Build step 1');
