@@ -45,7 +45,7 @@ export interface IOperationExecutionResult {
   readonly cobuildRunnerId: string | undefined;
 
   /**
-   * Returns true if this operation was co-built using this machine, false if cobuilds are disabled or it was executed on another agent.
+   * Returns true if this operation was co-built using this machine or cobuilds are disabled, false it was executed on another agent.
    */
   readonly executedOnThisAgent: boolean;
 }
