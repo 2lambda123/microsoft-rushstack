@@ -94,7 +94,7 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
    */
   public readonly consumers: Set<OperationExecutionRecord> = new Set();
 
-  public readonly stopwatch: Stopwatch = new Stopwatch();
+  private _stopwatch: Stopwatch = new Stopwatch();
   public readonly stdioSummarizer: StdioSummarizer = new StdioSummarizer({
     // Allow writing to this object after transforms have been closed. We clean it up manually in a finally block.
     preventAutoclose: true
@@ -147,6 +147,10 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
 
   public get quietMode(): boolean {
     return this._context.quietMode;
+  }
+
+  public get stopwatch(): Stopwatch {
+    return this._stopwatch;
   }
 
   public get collatedWriter(): CollatedWriter {
@@ -322,7 +326,7 @@ export class OperationExecutionRecord implements IOperationRunnerContext {
         ) {
           const { startTime } = this.stopwatch;
           if (startTime) {
-            this.stopwatch = Stopwatch.fromState({
+            this._stopwatch = Stopwatch.fromState({
               // use endtime as it's the more accurate version of when this operation was marked as complete.
               startTime,
               endTime: startTime + this.nonCachedDurationMs
