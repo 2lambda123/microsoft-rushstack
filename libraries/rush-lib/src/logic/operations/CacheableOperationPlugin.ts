@@ -34,6 +34,7 @@ import type { OperationMetadataManager } from './OperationMetadataManager';
 import type { BuildCacheConfiguration } from '../../api/BuildCacheConfiguration';
 import type { IOperationExecutionResult } from './IOperationExecutionResult';
 import type { OperationExecutionRecord } from './OperationExecutionRecord';
+import { EnvironmentVariableNames } from '../../api/EnvironmentConfiguration';
 
 const PLUGIN_NAME: 'CacheablePhasedOperationPlugin' = 'CacheablePhasedOperationPlugin';
 const PERIODIC_CALLBACK_INTERVAL_IN_SECONDS: number = 10;
@@ -98,6 +99,25 @@ export class CacheableOperationPlugin implements IPhasedCommandPlugin {
         const disjointSet: DisjointSet<Operation> | undefined = cobuildConfiguration?.cobuildFeatureEnabled
           ? new DisjointSet()
           : undefined;
+
+        for (const operation of recordByOperation.keys()) {
+          if (
+            operation.settings?.allowCobuildWithoutCache &&
+            !cobuildConfiguration?.cobuildWithoutCacheAllowed
+          ) {
+            throw new Error(
+              `Operation ${operation.name} is not allowed to run without the cobuild orchestration experiment enabled. You must use the ${EnvironmentVariableNames.RUSH_COBUILD_WITHOUT_CACHE_ALLOWED} environment variable to enable that mode.`
+            );
+          }
+          if (
+            operation.settings?.allowCobuildWithoutCache &&
+            !operation.settings.disableBuildCacheForOperation
+          ) {
+            throw new Error(
+              `Operation ${operation.name} must have disableBuildCacheForOperation set to true when using the cobuild orchestration experiment. This is to prevent implicit cache dependencies for this operation.`
+            );
+          }
+        }
 
         await Async.forEachAsync(
           recordByOperation.keys(),
@@ -258,7 +278,8 @@ export class CacheableOperationPlugin implements IPhasedCommandPlugin {
             phase,
             configHash,
             terminal: buildCacheTerminal,
-            operationMetadataManager
+            operationMetadataManager,
+            operation: record.operation
           });
 
           // Try to acquire the cobuild lock
@@ -359,15 +380,17 @@ export class CacheableOperationPlugin implements IPhasedCommandPlugin {
             if (cobuildCompletedState) {
               const { status, cacheId } = cobuildCompletedState;
 
+              if (record.operation.settings?.allowCobuildWithoutCache) {
+                // This should only be enabled if the experiment for cobuild orchestration is enabled.
+                return status;
+              }
+
               const restoreFromCacheSuccess: boolean = await restoreCacheAsync(
                 cobuildLock.projectBuildCache,
                 cacheId
               );
 
               if (restoreFromCacheSuccess) {
-                if (cobuildCompletedState) {
-                  return cobuildCompletedState.status;
-                }
                 return status;
               }
             } else if (!buildCacheContext.isCacheReadAttempted && buildCacheContext.isCacheReadAllowed) {
@@ -569,7 +592,8 @@ export class CacheableOperationPlugin implements IPhasedCommandPlugin {
     phase,
     configHash,
     terminal,
-    operationMetadataManager
+    operationMetadataManager,
+    operation
   }: {
     buildCacheContext: IOperationBuildCacheContext;
     buildCacheConfiguration: BuildCacheConfiguration | undefined;
@@ -578,10 +602,11 @@ export class CacheableOperationPlugin implements IPhasedCommandPlugin {
     configHash: string;
     terminal: ITerminal;
     operationMetadataManager: OperationMetadataManager | undefined;
+    operation: Operation;
   }): Promise<ProjectBuildCache | undefined> {
     if (!buildCacheContext.projectBuildCache) {
       const { cacheDisabledReason } = buildCacheContext;
-      if (cacheDisabledReason) {
+      if (cacheDisabledReason && !operation.settings?.allowCobuildWithoutCache) {
         terminal.writeVerboseLine(cacheDisabledReason);
         return;
       }
@@ -863,7 +888,7 @@ export function clusterOperations(
   for (const [operation, { cacheDisabledReason }] of operationBuildCacheMap) {
     const { associatedProject: project, associatedPhase: phase } = operation;
     if (project && phase) {
-      if (cacheDisabledReason) {
+      if (cacheDisabledReason && !operation.settings?.allowCobuildWithoutCache) {
         /**
          * Group the project build cache disabled with its consumers. This won't affect too much in
          * a monorepo with high build cache coverage.
